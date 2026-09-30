@@ -34,6 +34,10 @@ The measured execution times are compared to understand the performance characte
    - [5.3 MPI Implementation](#53-mpi-implementation)
    - [5.4 CUDA Implementation](#54-cuda-implementation)
 6. [Experimental Results](#6-experimental-results)
+   - [6.1 Execution Time](#61-execution-time)
+   - [6.2 Correctness Verification](#62-correctness-verification)
+   - [6.3 Speedup](#63-speedup)
+   - [6.4 Result Summary](#64-result-summary)
 7. [Performance Comparison](#7-performance-comparison)
    - [7.1 Speedup](#71-speedup)
    - [7.2 Execution Time Comparison](#72-execution-time-comparison)
@@ -437,3 +441,519 @@ Each block contains:
 ```
 
 Each CUDA thread is responsible for computing one output element of the result matrix, subject to the boundary checks implemented in the kernel.
+
+---
+
+# 4. Repository Structure
+
+```text
+Parallel-Matrix-Multiplication/
+├── README.md
+├── .gitignore
+│
+├── sequential/
+│   └── matrix_sequential.c
+│
+├── openmp/
+│   └── matrix_openmp.c
+│
+├── mpi/
+│   ├── matrix_mpi.c
+│   └── hosts
+│
+├── cuda/
+│   └── matrix_cuda.cu
+│
+└── results/
+    ├── execution_time.png
+    ├── speedup.png
+    └── screenshots/
+```
+
+---
+
+# 5. Execution Steps
+
+The following steps describe how each implementation was compiled and executed. The same matrix multiplication workload was used for all four implementations so that their execution times could be compared fairly.
+
+## 5.1 Sequential Implementation
+
+The sequential version provides the baseline execution time for comparison.
+
+### Step 1: Enter the WSL Ubuntu environment
+
+```bash
+wsl
+```
+
+Used to enter the Linux environment where the C program is compiled and executed.
+
+### Step 2: Verify the GCC compiler
+
+```bash
+gcc --version
+```
+
+Used to confirm that GCC is installed and available for compiling the C program.
+
+### Step 3: Create and enter the sequential directory
+
+```bash
+mkdir -p ~/parallel_lab/sequential
+cd ~/parallel_lab/sequential
+```
+
+Creates a separate working directory for the sequential implementation and moves into it.
+
+### Step 4: Compile the program
+
+```bash
+gcc -O2 matrix_sequential.c -o matrix_sequential
+```
+
+Compiles the sequential C program.
+
+- `-O2` enables compiler optimizations to improve execution performance.
+- `-o` specifies the name of the generated executable.
+
+### Step 5: Execute the program
+
+```bash
+./matrix_sequential
+```
+
+Runs the sequential matrix multiplication program. The measured execution time is used as the baseline for calculating speedup.
+
+---
+
+## 5.2 OpenMP Implementation
+
+The OpenMP version uses multiple CPU threads to perform matrix multiplication in parallel.
+
+### Step 1: Check available CPU processors
+
+```bash
+nproc
+```
+
+Displays the number of available CPU processing units. This helps determine an appropriate number of OpenMP threads.
+
+### Step 2: Set the number of OpenMP threads
+
+```bash
+export OMP_NUM_THREADS=8
+```
+
+Sets OpenMP to use 8 CPU threads for the parallel computation.
+
+### Step 3: Verify the thread configuration
+
+```bash
+echo $OMP_NUM_THREADS
+```
+
+Confirms that the OpenMP environment variable is set to 8.
+
+### Step 4: Compile the OpenMP program
+
+```bash
+gcc -O2 -fopenmp matrix_openmp.c -o matrix_openmp
+```
+
+Compiles the C program with optimization.
+
+- `-fopenmp` enables OpenMP support and links the required OpenMP library.
+
+### Step 5: Execute the program
+
+```bash
+./matrix_openmp
+```
+
+Runs the matrix multiplication using multiple CPU threads. The execution time is recorded for comparison with the sequential version.
+
+---
+
+## 5.3 MPI Implementation
+
+The MPI implementation distributes the matrix multiplication workload among multiple MPI processes.
+
+In this experiment, 4 MPI processes were used:
+
+```text
+Rank 0 → Master   → 1000 rows
+Rank 1 → Worker 1 → 1000 rows
+Rank 2 → Worker 2 → 1000 rows
+Rank 3 → Worker 3 → 1000 rows
+```
+
+### Step 1: Verify communication between machines
+
+```bash
+ping -c 4 worker1
+ping -c 4 worker2
+ping -c 4 worker3
+```
+
+Verifies that the Master can communicate with all worker machines before starting the MPI computation.
+
+### Step 2: Install OpenMPI
+
+```bash
+sudo apt update
+sudo apt install openmpi-bin libopenmpi-dev -y
+```
+
+Installs the OpenMPI runtime and development libraries required to compile and execute MPI programs.
+
+### Step 3: Generate an SSH key
+
+```bash
+ssh-keygen -t rsa
+```
+
+Generates an SSH key that can be used for passwordless communication between the Master and worker machines.
+
+### Step 4: Copy the SSH key to the workers
+
+```bash
+ssh-copy-id worker1
+ssh-copy-id worker2
+ssh-copy-id worker3
+```
+
+Allows the Master machine to connect to the worker machines without repeatedly entering a password.
+
+### Step 5: Configure the MPI host file
+
+Create a file named `hosts`:
+
+```text
+master slots=1
+worker1 slots=1
+worker2 slots=1
+worker3 slots=1
+```
+
+Specifies the machines that participate in the MPI computation and the number of MPI slots available on each machine.
+
+### Step 6: Compile the MPI program
+
+```bash
+mpicc -O2 matrix_mpi.c -o matrix_mpi
+```
+
+Compiles the MPI C program using the MPI compiler wrapper. `mpicc` automatically links the required MPI libraries.
+
+### Step 7: Copy the executable to worker machines
+
+```bash
+scp matrix_mpi worker1:~/matrix_mpi
+scp matrix_mpi worker2:~/matrix_mpi
+scp matrix_mpi worker3:~/matrix_mpi
+```
+
+Copies the executable to each worker so that every MPI process can execute the same program.
+
+### Step 8: Run the MPI program
+
+```bash
+mpirun -np 4 --hostfile hosts sh -c '$HOME/matrix_mpi'
+```
+
+Starts 4 MPI processes across the configured machines. The matrix rows are divided among the MPI processes. MPI communication is used to distribute data and collect results.
+
+The MPI implementation uses operations such as:
+
+- `MPI_Bcast`
+- `MPI_Scatter`
+- Local Matrix Multiplication
+- `MPI_Gather`
+
+Their roles are:
+
+- `MPI_Bcast` distributes common matrix data.
+- `MPI_Scatter` distributes portions of the workload.
+- Each process performs multiplication on its assigned rows.
+- `MPI_Gather` collects the partial results.
+
+---
+
+## 5.4 CUDA Implementation
+
+The CUDA implementation performs matrix multiplication on an NVIDIA GPU.
+
+### Step 1: Verify the NVIDIA GPU
+
+```bash
+nvidia-smi
+```
+
+Displays the installed NVIDIA GPU and its current status. This confirms that the GPU is available for CUDA execution.
+
+### Step 2: Verify the CUDA compiler
+
+```bash
+nvcc --version
+```
+
+Confirms that the NVIDIA CUDA compiler is installed and available.
+
+### Step 3: Compile the CUDA program
+
+```bash
+nvcc -O2 matrix_cuda.cu -o matrix_cuda
+```
+
+Compiles the CUDA source file using `nvcc`.
+
+- `-O2` enables compiler optimization.
+
+### Step 4: Execute the CUDA program
+
+```bash
+./matrix_cuda
+```
+
+Executes the CUDA matrix multiplication program. The CPU transfers input data to GPU memory, launches the CUDA kernel, and copies the resulting matrix back to CPU memory.
+
+The CUDA configuration used in this experiment is:
+
+```text
+Matrix size       : 4000 × 4000
+Block size        : 16 × 16
+Threads per block : 256
+Grid size         : 250 × 250
+Total blocks      : 62,500
+```
+
+Each CUDA thread is responsible for computing one element of the output matrix:
+
+```text
+C[row][column]
+```
+
+The execution consists of:
+
+```text
+Host Memory
+     |
+     | Host → Device Transfer
+     v
+GPU Device Memory
+     |
+     | CUDA Kernel
+     v
+Parallel Matrix Multiplication
+     |
+     | Device → Host Transfer
+     v
+Host Memory
+```
+
+The measured CUDA timing includes the relevant execution phases reported by the program. The CUDA kernel time and total CUDA phase time are also recorded separately for analysis.
+
+---
+
+# 6. Experimental Results
+
+The performance of all four implementations was measured using the same `4000 × 4000` matrix multiplication workload.
+
+## 6.1 Execution Time
+
+| Implementation | Configuration | Execution Time (seconds) |
+|---|---|---:|
+| Sequential | Single CPU execution | 606.987331 |
+| OpenMP | 8 CPU threads | 40.574496 |
+| MPI | 4 MPI processes | 223.691390 |
+| CUDA | GPU execution | 0.225428 |
+
+For CUDA, the measured kernel execution time was:
+
+```text
+CUDA Kernel Time: 0.188994 seconds
+CUDA Total Phase: 0.225428 seconds
+```
+
+The total CUDA phase includes the relevant GPU execution phases measured by the implementation.
+
+## 6.2 Correctness Verification
+
+The programs initialized matrices `A` and `B` with `1.0`. Therefore, every element of the resulting matrix should theoretically be:
+
+```text
+4000.00
+```
+
+because each output element performs 4000 multiplications of `1.0 × 1.0`.
+
+| Implementation | Expected Result | Reported Result | Status |
+|---|---:|---:|---|
+| Sequential | 4000.00 | 4000.00 | Verified |
+| OpenMP | 4000.00 | 4000.00 | Verified |
+| MPI | 4000.00 | 4000.00 | Verified |
+| CUDA | 4000.00 | 0.00 | Requires debugging |
+
+The Sequential, OpenMP, and MPI implementations produced the expected verification value.
+
+The CUDA implementation reported `0.00` for the checked output element. Therefore, the CUDA timing result is recorded for performance analysis, but its correctness has not been validated and the CUDA implementation requires further debugging before making a final end-to-end performance claim.
+
+## 6.3 Speedup
+
+Speedup is calculated relative to the sequential implementation:
+
+```text
+Speedup = Sequential Execution Time / Parallel Execution Time
+```
+
+Using the measured execution times:
+
+| Implementation | Execution Time (s) | Speedup |
+|---|---:|---:|
+| Sequential | 606.987331 | 1.00× |
+| OpenMP | 40.574496 | 14.96× |
+| MPI | 223.691390 | 2.71× |
+| CUDA | 0.225428 | 2692.60× |
+
+The CUDA speedup shown above is an observed timing ratio only. Since the CUDA verification currently reports `0.00` instead of the expected `4000.00`, it should not be interpreted as a validated correct speedup until the CUDA implementation is corrected.
+
+## 6.4 Result Summary
+
+```text
+Sequential
+    Execution Time : 606.987331 s
+    Speedup        : 1.00×
+
+OpenMP
+    Execution Time : 40.574496 s
+    Speedup        : 14.96×
+
+MPI
+    Execution Time : 223.691390 s
+    Speedup        : 2.71×
+
+CUDA
+    Kernel Time    : 0.188994 s
+    Total Phase    : 0.225428 s
+    Observed Ratio : 2692.60×
+    Verification   : Requires debugging
+```
+
+These measurements are used in the following sections to compare the performance characteristics of sequential, shared-memory, distributed-memory, and GPU-based parallel execution.
+
+---
+
+# 7. Performance Comparison
+
+The measured results from all four implementations are compared using execution time and speedup.
+
+## 7.1 Speedup
+
+Speedup is calculated relative to the sequential baseline:
+
+```text
+Speedup = Sequential Execution Time / Parallel Execution Time
+```
+
+Parallel efficiency for the CPU-based implementations is calculated as:
+
+```text
+Efficiency = Speedup / Number of Parallel Units
+```
+
+| Implementation | Parallel Units | Execution Time (s) | Speedup | Efficiency |
+|---|---:|---:|---:|---:|
+| Sequential | 1 | 606.987331 | 1.00× | 100% |
+| OpenMP | 8 threads | 40.574496 | 14.96× | 187% |
+| MPI | 4 processes | 223.691390 | 2.71× | 68% |
+| CUDA | GPU threads | 0.225428 | 2692.60× | Not applicable |
+
+> **Note:** The CUDA speedup is an observed timing ratio only. The CUDA verification reported `0.00` instead of `4000.00`, so this value is not validated (see Section 6.2).
+
+## 7.2 Execution Time Comparison
+
+<img width="600" alt="execution_time" src="results/execution_time.png" />
+
+This graph compares the execution time of all four implementations. A logarithmic scale is used because the CUDA time is much smaller than the sequential time.
+
+## 7.3 Speedup Comparison
+
+<img width="600" alt="speedup" src="results/speedup.png" />
+
+This graph compares the speedup of OpenMP, MPI, and CUDA relative to the sequential baseline.
+
+---
+
+# 8. Technical Analysis
+
+The analysis below is based on the measurements recorded in this experiment.
+
+### 1. Sequential
+
+The sequential implementation took **606.987331 seconds** for `4000³ = 64,000,000,000` multiply-add operations. It runs on a single CPU execution flow, so it is used as the baseline.
+
+### 2. OpenMP
+
+OpenMP reduced the execution time to **40.574496 seconds**, a speedup of **14.96×** with 8 threads.
+
+- All threads share the same memory, so no data copying between threads is needed.
+- Each thread processes different rows of `C`, so the iterations are independent.
+- A speedup above 8× (superlinear) is higher than the ideal value for 8 threads. This suggests the sequential baseline is slower than expected, for example due to cache behavior from the `B[k][j]` access pattern, or from differences in loop order or compiler settings between the two programs. The baseline should be re-run to confirm this.
+
+### 3. MPI
+
+MPI reduced the execution time to **223.691390 seconds**, a speedup of **2.71×** with 4 processes, which is an efficiency of about 68%.
+
+- Each process has its own memory, so data must be sent between processes.
+- `MPI_Bcast` sends matrix `B` (about 128 MB in `double` precision) to every process, and `MPI_Scatter` and `MPI_Gather` move the rows of `A` and `C`.
+- Because the processes run on separate machines connected by a network, communication time adds to the computation time.
+- Synchronization between processes also adds overhead.
+
+### 4. CUDA
+
+CUDA recorded a kernel time of **0.188994 seconds** and a total phase time of **0.225428 seconds**.
+
+- The GPU can run a very large number of threads at the same time (62,500 blocks of 256 threads).
+- The difference between the total phase and the kernel time (about 0.036 seconds) represents the other measured phases, such as memory transfer.
+- The CUDA verification reported `0.00` instead of `4000.00`, so the kernel output was not correct. Until this is fixed, the CUDA timing cannot be treated as a valid result, and a failed or incomplete kernel can finish much faster than a correct one.
+
+### 5. Overall Observation
+
+| Implementation | Main Factor Affecting Performance |
+|---|---|
+| Sequential | Only one execution flow performs all computation |
+| OpenMP | Shared memory gives low overhead, but the number of CPU cores is limited |
+| MPI | Communication and synchronization between processes |
+| CUDA | Host-device memory transfer and kernel launch (not validated) |
+
+These observations are specific to this hardware, workload, and configuration and should not be generalized to all systems.
+
+---
+
+# 9. Conclusion
+
+This experiment implemented the same `4000 × 4000` matrix multiplication using Sequential, OpenMP, MPI, and CUDA approaches and compared their measured execution times.
+
+The results showed:
+
+- Sequential execution took 606.987331 seconds and was used as the baseline.
+- OpenMP with 8 threads took 40.574496 seconds (14.96× speedup).
+- MPI with 4 processes took 223.691390 seconds (2.71× speedup).
+- CUDA recorded 0.225428 seconds, but its output failed verification, so the result is not yet validated.
+- The Sequential, OpenMP, and MPI implementations produced the expected value of `4000.00`.
+
+Among the verified implementations, OpenMP gave the best performance. MPI gave a smaller speedup, which is consistent with the cost of communication between processes.
+
+The experiment also provides practical experience with:
+
+- Shared-memory, distributed-memory, and GPU-based parallel programming
+- Compiling and running OpenMP, MPI, and CUDA programs
+- Measuring execution time and calculating speedup
+- Verifying results and analyzing performance overheads
+
+## Future Work
+
+- Fix and re-verify the CUDA implementation, then re-measure its time.
+- Re-run the sequential baseline to check the OpenMP speedup.
+- Test with different thread counts and process counts.
+- Try an optimized version such as loop reordering, blocking, or CUDA shared-memory tiling.
