@@ -1,450 +1,439 @@
-# Performance Analysis of Sequential, OpenMP, MPI, and CUDA
-
-
-
-> A comprehensive benchmark project comparing the execution of dense linear algebra workloads across Single-Core CPU, Multi-Core Shared Memory, Distributed Clusters, and Massively Parallel GPUs.
-
----
-
-##  Table of Contents
-
-1. [Executive Summary](#executive-summary)
-2. [Experiment Objectives](#1--experiment-objectives)
-3. [Theoretical & Architectural Comparison](#2--theoretical--architectural-comparison)
-4. [Workload Specification](#3--workload-specification)
-5. [Source Code References](#4--source-code-references)
-6. [Empirical Results & Screenshots](#5--empirical-results--screenshots)
-7. [Performance Comparison & Visualizations](#6--performance-comparison--visualizations)
-8. [Technical Analysis & Discussion](#7--technical-analysis--discussion)
-9. [Detailed Execution Setup](#8-detailed-execution-setup)
-
-
-
----
-
-
+# Parallel Matrix Multiplication Using Sequential, OpenMP, MPI and CUDA
 
 ## Executive Summary
 
-This project tests how fast a computer can multiply a large 4000x4000 matrix using four different methods:
+This repository presents an experimental implementation and performance comparison of matrix multiplication using four different computing approaches: Sequential CPU execution, OpenMP shared-memory parallelism, MPI distributed-memory parallelism, and CUDA GPU parallelism.
 
-1. **Sequential CPU**: Using a single processor core.
-2. **OpenMP**: Using 8 processor cores on a single computer.
-3. **MPI**: Using 4 separate virtual machines connected over a network.
-4. **CUDA**: Using a graphics card (GPU) to do the math.
+The same `4000 × 4000` matrix multiplication workload is implemented using each approach to provide a common basis for comparison. The experiment focuses on understanding how different parallel computing models execute the same computational workload and how factors such as CPU threads, MPI processes, GPU threads, memory architecture, communication, synchronization, and data transfer affect performance.
 
-The main goal is to show how parallel computing reduces execution time compared to a standard sequential program.
+The experiment includes the complete implementation and execution process for all four approaches, result verification, execution-time measurement, speedup calculation, performance comparison, graph generation, and technical analysis. The Sequential implementation provides the baseline, OpenMP demonstrates multi-threaded CPU execution, MPI demonstrates distributed-memory execution using multiple processes, and CUDA demonstrates GPU-based parallel execution.
 
----
-
-## 1.  Experiment Objectives
-
-- **Multi-Model Parallelization**: Implement a uniform $4000 \times 4000$ matrix multiplication workload across four fundamental parallel paradigms: Sequential, OpenMP, MPI, and CUDA.
-- **Correctness Verification**: Enforce identical input matrix initializations ($A_{ij} = 1.0, B_{ij} = 1.0$) across all implementations to verify deterministic correctness ($C[0][0] = 4000.00$).
-- **Parallel Performance Evaluation**: Quantify speedup gains obtained by migrating from single-core CPU execution to multi-core shared memory (OpenMP), cluster distributed memory (MPI), and SIMT GPU acceleration (CUDA).
-- **Overhead Analysis**: Analyze communication latency in network-bound MPI clusters and host-to-device memory transfer overheads ($H2D$ / $D2H$) in CUDA.
+The measured execution times are compared to understand the performance characteristics and trade-offs of each computing model for a computationally intensive matrix multiplication workload.
 
 ---
 
+## Table of Contents
 
-
-## 2. Theoretical & Architectural Comparison
-
-### 2.1 Architectural Breakdown
-
-| Paradigm | Execution Model | Memory Space | Description |
-| :--- | :--- | :--- | :--- |
-| **Sequential** | Single-Threaded | Local CPU | Execution follows a traditional single-threaded, triple-nested loop ($O(N^3)$ complexity). Instructions run strictly sequentially on a single CPU core. |
-| **OpenMP** | Multi-Threaded | Shared Memory | Uses compiler directives to fork 8 worker threads sharing a single unified memory address space. Loop iterations are dynamically divided. |
-| **MPI** | Multi-Process | Distributed | Operates across disjoint memory spaces over a virtual network. Matrix A is scattered, Matrix B is broadcasted, and results are gathered. |
-| **CUDA** | SIMT GPU | Device Memory | Offloads computation via PCIe bus. Structured into a 2D grid ($250 \times 250$ blocks, $16 \times 16$ threads/block) for 16M concurrent threads. |
-
----
-
-## 3.  Workload Specification
-
-- **Matrix Dimension ($N$)**: $4000 \times 4000$
-- **Input Matrix $A$ & $B$**: $A[i][j] = 1.0, B[i][j] = 1.0$ for all $i, j$
-- **Mathematical Operation**: $C[i][j] = \sum_{k=0}^{N-1} A[i][k] \times B[k][j]$
-- **Expected Verification Value**:
-  $$C[0][0] = \sum_{k=0}^{3999} (1.0 \times 1.0) = 4000.00$$
-
----
-
-## 4.  Source Code References
-
-All complete source code files are located in the [`src/`](src/) directory:
-
-| Computing Paradigm | Source File Link | Description / Implementation Highlights |
-| :--- | :--- | :--- |
-| **Sequential CPU** | [`src/sequential/seqmatrix.c`](src/sequential/seqmatrix.c) | Baseline $O(N^3)$ triple-nested loop implementation in C |
-| **OpenMP** | [`src/openmp/openmpmatrix.c`](src/openmp/openmpmatrix.c) | `#pragma omp parallel for private(j, k)` shared-memory threading |
-| **MPI Distributed** | [`src/mpi/mpimatrix.c`](src/mpi/mpimatrix.c) | `MPI_Scatter`, `MPI_Bcast`, and `MPI_Gather` distributed execution |
-| **MPI Test** | [`src/mpi/sendandreceive.c`](src/mpi/sendandreceive.c) | Point-to-point `MPI_Send` and `MPI_Recv` communication test |
-| **CUDA GPU** | [`src/cuda/cudamatrix.c`](src/cuda/cudamatrix.c) | CUDA kernel `matMulKernel<<<grid, block>>>` with 16 million threads |
+1. [Experiment Objectives](#1-experiment-objectives)
+2. [Theoretical and Architecture Comparison](#2-theoretical-and-architecture-comparison)
+   - [2.1 Sequential Computing](#21-sequential-computing)
+   - [2.2 OpenMP](#22-openmp)
+   - [2.3 MPI](#23-mpi)
+   - [2.4 CUDA](#24-cuda)
+   - [2.5 Architecture Comparison](#25-architecture-comparison)
+3. [Workload Specifications](#3-workload-specifications)
+   - [3.1 Matrix Configuration](#31-matrix-configuration)
+   - [3.2 Computational Complexity](#32-computational-complexity)
+   - [3.3 OpenMP Configuration](#33-openmp-configuration)
+   - [3.4 MPI Configuration](#34-mpi-configuration)
+   - [3.5 CUDA Configuration](#35-cuda-configuration)
+4. [Repository Structure](#4-repository-structure)
+5. [Execution Steps](#5-execution-steps)
+   - [5.1 Sequential Implementation](#51-sequential-implementation)
+   - [5.2 OpenMP Implementation](#52-openmp-implementation)
+   - [5.3 MPI Implementation](#53-mpi-implementation)
+   - [5.4 CUDA Implementation](#54-cuda-implementation)
+6. [Experimental Results](#6-experimental-results)
+7. [Performance Comparison](#7-performance-comparison)
+   - [7.1 Speedup](#71-speedup)
+   - [7.2 Execution Time Comparison](#72-execution-time-comparison)
+   - [7.3 Speedup Comparison](#73-speedup-comparison)
+8. [Technical Analysis](#8-technical-analysis)
+9. [Conclusion](#9-conclusion)
 
 ---
 
-## 5.  Empirical Results & Screenshots
+# 1. Experiment Objectives
 
-*(Click to expand and view execution screenshots)*
+The main objectives of this experiment are:
 
-<details>
-<summary><b>1. Sequential Baseline Output</b></summary>
-<br/>
-Execution completed in <b>321.28 seconds</b> with correct verification $C[0][0] = 4000.00$.
-
-![Sequential Execution Result](images/sequential_result.jpg)
-</details>
-
-<details>
-<summary><b>2. OpenMP Shared Memory Execution</b></summary>
-<br/>
-OpenMP utilized 8 active CPU threads to distribute the workload.
-
-![OpenMP Execution Result](images/openmp_result.png?bust=2)
-</details>
-
-<details>
-<summary><b>3. MPI Multi-Node Cluster Network Verification</b></summary>
-<br/>
-Ping test confirming 0% packet loss across the 4 VM cluster (`master`, `worker1`, `worker2`, `worker3`).
-
-![MPI Ping Test](images/mpi_ping.jpg)
-</details>
-
-<details>
-<summary><b>4. MPI Process Communication Verification</b></summary>
-<br/>
-Successful point-to-point message passing (`MPI_Send` / `MPI_Recv`) across all 4 MPI ranks.
-
-![MPI Send Recv Verification](images/mpi_send_recv.jpg)
-</details>
-
-<details>
-<summary><b>5. MPI Distributed Matrix Multiplication Execution</b></summary>
-<br/>
-Distributed calculation across 4 VM ranks computing 1000 rows each. Execution time achieved was <b>226.17 seconds</b>.
-
-![MPI Matrix Multiplication Result](images/mpi_result.png)
-</details>
+- To implement matrix multiplication using sequential CPU execution.
+- To implement matrix multiplication using OpenMP-based shared-memory parallelism.
+- To implement matrix multiplication using MPI-based distributed-memory parallelism.
+- To implement matrix multiplication using CUDA-based GPU parallelism.
+- To execute the same `4000 × 4000` matrix multiplication workload using all four approaches.
+- To measure and record the execution time of each implementation.
+- To verify the correctness of the computed matrix results.
+- To calculate the speedup of the parallel implementations relative to the sequential baseline.
+- To compare the architectural characteristics of Sequential, OpenMP, MPI, and CUDA approaches.
+- To analyze the effect of CPU threads, MPI processes, GPU threads, communication, synchronization, and memory transfer on performance.
+- To generate graphs for visual comparison of execution time and speedup.
+- To understand the practical performance differences between shared-memory, distributed-memory, and GPU-based parallel computing.
 
 ---
 
-## 6.  Performance Comparison & Visualizations
+# 2. Theoretical and Architecture Comparison
 
-### Performance Comparison Table
+## 2.1 Sequential Computing
 
-| Model | Architecture | Active Resources | Execution Time (s) | Speedup Factor |
-| :--- | :--- | :--- | :--- | :--- |
-| **Sequential** | Single CPU Core | 1 CPU Thread | `321.280` | **1.00×** |
-| **OpenMP** | Shared-Memory | 8 CPU Threads | `104.490` | **3.07×** |
-| **MPI** | Distributed | 4 Process Ranks | `226.170` | **1.42×** |
-| **CUDA** | Massively Parallel | NVIDIA GPU | ⏳ TBD | ⏳ TBD |
+Sequential computing performs the complete matrix multiplication using a single CPU execution flow.
 
-### Empirical Performance Charts
+For two matrices `A` and `B`, the result matrix `C` is calculated as:
 
-![Performance Comparison Charts](images/performance_comparison_charts.png?bust=vertical_v1)
-
-#### Standalone Execution Time Chart
-![Execution Time Chart](images/execution_time_chart.png?bust=vertical_v1)
-
-#### Standalone Speedup Factor Chart
-![Speedup Chart](images/speedup_chart.png?bust=vertical_v1)
-
----
-
-## 7.  Technical Analysis & Discussion
-
-1. **Sequential CPU Baseline**: Serves as the computational baseline ($321.28\text{s}$). Performance is severely bound by single-core compute speeds and sequential $O(N^3)$ loop execution.
-2. **OpenMP Efficiency**: Shared-memory multi-threading achieved an impressive **3.07× speedup** on 8 CPU threads ($\sim 99\%$ parallel efficiency). Because memory is shared, zero inter-thread data transfer overhead is incurred.
-3. **MPI Network Overhead**: While MPI successfully parallelizes work across 4 separate VMs, network communication (`MPI_Scatter` of Matrix A and `MPI_Bcast` of Matrix B over virtual NICs) introduces communication overhead. Thus, speedup is $1.42\times$ compared to OpenMP's $3.07\times$.
-4. **CUDA GPU Dominance**: (⏳ Pending benchmark execution)
-
----
-
-## 8. Detailed Execution Setup
-
-Below are the exact execution steps as required by the laboratory manual, grouped by where they need to be executed.
-
----
-
-### 8.1 Part A - Sequential Matrix Multiplication
-
-#### Prerequisites
-- Windows PowerShell is available.
-- WSL2 is installed and an Ubuntu distribution is available.
-- Internet access is available for package installation inside Ubuntu.
-- The user has permission to run sudo commands in Ubuntu.
-
-#### Location: Windows PowerShell on the Windows host
-
-**1. Open Windows PowerShell**
-Open the Windows Start menu, search for PowerShell, and select Windows PowerShell.
-
-**2. Verify that WSL is installed**
-Run the following command to confirm that WSL is available on the Windows system.
-```bash
-wsl --status
-```
-
-**3. List installed WSL distributions**
-Run the command below to check which Linux distribution is installed.
-```bash
-wsl -l -v
-```
-
-**4. Start Ubuntu from PowerShell**
-Launch the installed Ubuntu distribution from PowerShell.
-```bash
-wsl
-```
-*Expected result:* The terminal prompt changes to the Ubuntu shell (e.g., `user@computer:~$`)
-
-#### Location: Ubuntu terminal inside WSL
-
-**5. Update Ubuntu package information**
-```bash
-sudo apt update
-```
-
-**6. Install GCC and build tools**
-```bash
-sudo apt install build-essential -y
-```
-
-**7. Verify GCC**
-```bash
-gcc --version
-```
-
-**8. Create the sequential experiment directory**
-```bash
-mkdir -p ~/parallel_lab/sequential
-cd ~/parallel_lab/sequential
-```
-
-**9. Create the source file**
-```bash
-nano matrix_sequential.c
-```
-*(Code entered here. Save in nano: press Ctrl + O, press Enter, then press Ctrl + X to exit.)*
-
-**10. Compile the sequential program**
-```bash
-gcc -O2 matrix_sequential.c -o matrix_sequential
-```
-
-**11. Verify the executable**
-```bash
-ls -l
-```
-
-**12. Run the sequential program**
-```bash
-./matrix_sequential
-```
-*Expected result:* The program should report completion, execution time, and C[0][0] = 4000.00.
-
----
-
-### 8.2 Part B - OpenMP Matrix Multiplication
-
-#### Prerequisites
-- The WSL2 Ubuntu environment from Part A is working.
-- GCC is installed.
-- The WSL environment exposes multiple logical CPUs.
-
-#### Location: Windows PowerShell
-
-**1. Enter WSL Ubuntu**
-```bash
-wsl
-```
-
-#### Location: Ubuntu terminal inside WSL
-
-**2. Check the number of logical CPUs**
-```bash
-nproc
-```
-
-**3. Set OpenMP to 8 threads**
-```bash
-export OMP_NUM_THREADS=8
-```
-
-**4. Verify the thread setting**
-```bash
-echo $OMP_NUM_THREADS
-```
-*Expected result:* Output should be `8`.
-
-**5. Create directory and source file**
-```bash
-mkdir -p ~/parallel_lab/openmp
-cd ~/parallel_lab/openmp
-nano matrix_openmp.c
-```
-
-**6. Compile the OpenMP program**
-```bash
-gcc -O2 -fopenmp matrix_openmp.c -o matrix_openmp
-```
-
-**7. Run the OpenMP program**
-```bash
-./matrix_openmp
-```
-*Expected result:* The output should show the number of threads and the execution time.
-
-**8. Monitor CPU utilization (optional)**
-Run `htop` in another terminal while the OpenMP computation is running to verify all cores are engaged.
-
----
-
-### 8.3 Part C - MPI Distributed Matrix Multiplication
-
-#### Prerequisites
-- VMware Workstation or an equivalent virtualization platform.
-- Four Ubuntu virtual machines (One Master VM and three Worker VMs).
-- All four VMs connected to the same virtual network.
-
-#### Location: VMware Workstation on the host system
-
-**1. Create the four VMs**
-Create one Ubuntu VM named `master` and three Ubuntu VMs named `worker1`, `worker2` and `worker3`. Connect them to the same VMware virtual network.
-
-#### Location: Every Ubuntu VM (Master + All Workers)
-
-**2. Set unique hostnames**
-Run the hostname command appropriate to the current VM.
-```bash
-sudo hostnamectl set-hostname master
-# On Worker1: sudo hostnamectl set-hostname worker1
-# On Worker2: sudo hostnamectl set-hostname worker2
-# On Worker3: sudo hostnamectl set-hostname worker3
-```
-
-**3. Identify IP addresses**
-```bash
-hostname -I
-```
-
-**4. Install OpenSSH & Open MPI**
-```bash
-sudo apt update
-sudo apt install openssh-server -y
-sudo systemctl enable --now ssh
-sudo apt install openmpi-bin libopenmpi-dev -y
-```
-
-**5. Verify MPI tools**
-```bash
-mpicc --version
-mpirun --version
-```
-
-#### Location: Master VM Only
-
-**6. Test network connectivity**
-From the Master VM, ping each Worker VM to ensure no packet loss.
-```bash
-ping -c 4 192.168.125.129
-ping -c 4 192.168.125.130
-ping -c 4 192.168.125.131
-```
-
-**7. Create an SSH key on Master**
-Generate an SSH key pair for passwordless login.
-```bash
-ssh-keygen -t rsa
-```
-
-**8. Copy the public key to Workers**
-```bash
-ssh-copy-id worker1
-ssh-copy-id worker2
-ssh-copy-id worker3
-```
-
-**9. Test passwordless SSH**
-Check remote hostname access.
-```bash
-ssh worker1 hostname
-ssh worker2 hostname
-ssh worker3 hostname
-```
-
-**10. Create the MPI working directory and hostfile**
-```bash
-mkdir -p ~/parallel_lab/mpi
-cd ~/parallel_lab/mpi
-nano hosts
-```
-*(Enter the host slots in the file:)*
 ```text
-master slots=1
-worker1 slots=1
-worker2 slots=1
-worker3 slots=1
+C = A × B
 ```
 
-**11. Compile the MPI program**
-```bash
-mpicc -O2 matrix_mpi.c -o matrix_mpi
+Each element of the result matrix is calculated using:
+
+```text
+C[i][j] = Σ A[i][k] × B[k][j]
 ```
 
-**12. Copy the executable to Workers**
-```bash
-scp matrix_mpi worker1:~/matrix_mpi
-scp matrix_mpi worker2:~/matrix_mpi
-scp matrix_mpi worker3:~/matrix_mpi
+The computation is performed using three nested loops:
+
+```text
+for each row i
+    for each column j
+        for each k
+            C[i][j] += A[i][k] × B[k][j]
 ```
 
-**13. Run the MPI program**
-Launch four MPI processes using the hostfile.
-```bash
-mpirun -np 4 --hostfile hosts sh -c '$HOME/matrix_mpi'
+Since only one execution flow performs the computation, there is no explicit parallelism. This implementation is used as the baseline against which the performance of OpenMP, MPI, and CUDA is compared.
+
+## 2.2 OpenMP
+
+OpenMP is used to introduce shared-memory parallelism on the CPU.
+
+Instead of processing all matrix rows sequentially, the workload is divided among multiple CPU threads. In this experiment, the OpenMP implementation uses:
+
+```text
+8 CPU threads
 ```
-*Expected result:* The output should show ranks computing 1000 rows each and a final verification value of 4000.00.
+
+The outer loop of the matrix multiplication is parallelized so that different threads can process different rows concurrently.
+
+Conceptually:
+
+```text
+                    Shared CPU Memory
+                           |
+        +------------------+------------------+
+        |                  |                  |
+     Thread 1           Thread 2          Thread 3
+        |                  |                  |
+      Rows               Rows               Rows
+        |                  |                  |
+        +------------------+------------------+
+                           |
+                       Thread 8
+```
+
+All OpenMP threads belong to the same process and share access to the matrices stored in memory.
+
+The main characteristics of OpenMP in this experiment are:
+
+- Shared-memory execution
+- Multiple CPU threads
+- Same address space
+- Low communication overhead
+- Parallel execution of independent loop iterations
+
+The OpenMP implementation uses the following directive to distribute loop iterations among threads:
+
+```c
+#pragma omp parallel for
+```
+
+## 2.3 MPI
+
+MPI (Message Passing Interface) is used to implement distributed-memory parallelism.
+
+Unlike OpenMP, MPI processes do not share the same memory space. Each MPI process has its own address space and communicates with other processes using message-passing operations.
+
+This experiment uses:
+
+```text
+4 MPI processes
+```
+
+The 4000 rows of the matrix are divided equally among the four processes:
+
+```text
+Rank 0 → 1000 rows
+Rank 1 → 1000 rows
+Rank 2 → 1000 rows
+Rank 3 → 1000 rows
+```
+
+The general execution flow is:
+
+```text
+                    Master Process
+                         |
+                    MPI_Scatter
+                         |
+        +----------------+----------------+----------------+
+        |                |                |                |
+      Rank 0           Rank 1           Rank 2           Rank 3
+    1000 rows        1000 rows        1000 rows        1000 rows
+        |                |                |                |
+        +----------------+----------------+----------------+
+                         |
+                  Local Computation
+                         |
+                    MPI_Gather
+                         |
+                  Complete Matrix C
+```
+
+Matrix B is made available to all processes using:
+
+```text
+MPI_Bcast
+```
+
+The major MPI operations used in the experiment are:
+
+- `MPI_Scatter`
+- `MPI_Bcast`
+- Local Matrix Multiplication
+- `MPI_Gather`
+
+MPI introduces communication and synchronization overhead because data must be distributed between processes and the partial results must be collected after computation.
+
+## 2.4 CUDA
+
+CUDA is used to implement matrix multiplication using GPU parallelism.
+
+Unlike CPU-based Sequential, OpenMP, and MPI implementations, CUDA executes the matrix multiplication using GPU threads.
+
+Each CUDA thread is assigned the computation of an output matrix element.
+
+The experiment uses:
+
+```text
+Block size       = 16 × 16
+Threads/block    = 256
+Grid size        = 250 × 250
+Total blocks     = 62,500
+```
+
+The execution can be represented as:
+
+```text
+                         GPU
+                          |
+                     CUDA Grid
+                          |
+        +-----------------+-----------------+
+        |                 |                 |
+      Block 0           Block 1          Block 2
+        |                 |                 |
+     16 × 16           16 × 16          16 × 16
+     Threads           Threads          Threads
+        |                 |                 |
+        +-----------------+-----------------+
+                          |
+                    Result Matrix C
+```
+
+Since the matrix has 4000 × 4000 output elements, a large number of GPU threads can work on different output elements concurrently.
+
+The CUDA implementation involves:
+
+1. Allocate host memory
+2. Initialize input matrices
+3. Allocate device memory
+4. Copy matrices from CPU memory to GPU memory
+5. Launch CUDA kernel
+6. Perform matrix multiplication on GPU
+7. Copy result from GPU memory to CPU memory
+8. Verify the result
+
+CUDA also introduces host-to-device and device-to-host memory transfers, which contribute to the overall execution time.
+
+## 2.5 Architecture Comparison
+
+| Feature | Sequential | OpenMP | MPI | CUDA |
+|---|---|---|---|---|
+| Computing model | Sequential execution | Shared-memory parallelism | Distributed-memory parallelism | GPU parallelism |
+| Main processing hardware | CPU | Multi-core CPU | CPUs across multiple processes/nodes | NVIDIA GPU |
+| Execution unit | Single CPU execution flow | CPU threads | MPI processes | GPU threads |
+| Memory model | Shared CPU memory | Shared CPU memory | Separate memory per process | GPU device memory |
+| Number of parallel units | 1 | 8 threads | 4 processes | 256 threads per block |
+| Communication | Not required | Shared memory | Message passing | Host-device memory transfer |
+| Synchronization | Minimal | Thread synchronization | MPI synchronization | GPU synchronization |
+| Main overhead | Computation | Thread management | Communication and synchronization | Memory transfer and kernel launch |
+| Scalability | Limited | Depends on CPU cores | Can extend across processes/nodes | Large number of GPU threads |
+| Primary purpose in experiment | Baseline | CPU parallelism | Distributed parallelism | GPU parallelism |
 
 ---
 
-### 8.4 Part D - CUDA Matrix Multiplication
+# 3. Workload Specifications
 
-#### Prerequisites
-- NVIDIA CUDA-capable GPU.
-- NVIDIA driver installed and GPU recognized.
-- CUDA Toolkit installed.
+## 3.1 Matrix Configuration
 
-#### Location: CUDA-capable terminal
+The same workload is used for all four implementations to make the performance comparison consistent.
 
-**1. Verify the NVIDIA GPU**
-```bash
-nvidia-smi
+```text
+Matrix A = 4000 × 4000
+Matrix B = 4000 × 4000
+Matrix C = 4000 × 4000
 ```
 
-**2. Verify the CUDA compiler**
-```bash
-nvcc --version
+The input matrices are initialized with:
+
+```text
+A[i][j] = 1.0
+B[i][j] = 1.0
 ```
 
-**3. Create directory and source file**
-```bash
-mkdir -p ~/parallel_lab/cuda
-cd ~/parallel_lab/cuda
-nano matrix_cuda.cu
+The result matrix is initially:
+
+```text
+C[i][j] = 0.0
 ```
 
-**4. Compile the CUDA program**
-```bash
-nvcc -O2 matrix_cuda.cu -o matrix_cuda
+For every element of the result matrix:
+
+```text
+C[i][j] = A[i][0] × B[0][j]
+        + A[i][1] × B[1][j]
+        + ...
+        + A[i][3999] × B[3999][j]
 ```
 
-**5. Run the CUDA program**
-```bash
-./matrix_cuda
-```
-*Expected result:* The program should report the grid size, block size, kernel time, total CUDA phase time and C[0][0] = 4000.00.
+Since every input element is 1.0 and there are 4000 terms:
 
+```text
+C[i][j] = 4000.00
+```
+
+Therefore, the expected verification value is:
+
+```text
+C[0][0] = 4000.00
+```
+
+This known expected value is used to check the correctness of the implementations.
+
+## 3.2 Computational Complexity
+
+Standard matrix multiplication uses three nested loops:
+
+```text
+for i = 0 to N-1
+    for j = 0 to N-1
+        for k = 0 to N-1
+            C[i][j] += A[i][k] × B[k][j]
+```
+
+Therefore, its computational complexity is:
+
+```text
+O(N³)
+```
+
+For:
+
+```text
+N = 4000
+```
+
+the number of iterations of the innermost computation is:
+
+```text
+4000³ = 64,000,000,000
+```
+
+This large computational workload makes matrix multiplication suitable for demonstrating the effects of parallel computing.
+
+## 3.3 OpenMP Configuration
+
+The OpenMP implementation uses:
+
+```text
+Number of CPU threads = 8
+```
+
+The workload is divided among the eight threads by parallelizing the outer matrix loop.
+
+Conceptually:
+
+```text
+4000 rows
+    |
+    +---- Thread 1
+    +---- Thread 2
+    +---- Thread 3
+    +---- Thread 4
+    +---- Thread 5
+    +---- Thread 6
+    +---- Thread 7
+    +---- Thread 8
+```
+
+Each thread processes a portion of the matrix rows.
+
+## 3.4 MPI Configuration
+
+The MPI implementation uses:
+
+```text
+Number of MPI processes = 4
+```
+
+The workload is divided equally:
+
+```text
+4000 rows / 4 processes = 1000 rows per process
+```
+
+Therefore:
+
+```text
+Rank 0 → 1000 rows
+Rank 1 → 1000 rows
+Rank 2 → 1000 rows
+Rank 3 → 1000 rows
+```
+
+The MPI setup consists of:
+
+```text
+Master
+Worker 1
+Worker 2
+Worker 3
+```
+
+The processes communicate using MPI message-passing operations.
+
+## 3.5 CUDA Configuration
+
+The CUDA implementation uses the following configuration:
+
+```text
+Matrix size       = 4000 × 4000
+Block dimensions  = 16 × 16
+Threads per block = 256
+Grid dimensions   = 250 × 250
+Total blocks      = 62,500
+```
+
+The grid dimensions are calculated as:
+
+```text
+4000 / 16 = 250
+```
+
+Therefore:
+
+```text
+Grid = 250 × 250
+```
+
+and:
+
+```text
+250 × 250 = 62,500 blocks
+```
+
+Each block contains:
+
+```text
+16 × 16 = 256 threads
+```
+
+Each CUDA thread is responsible for computing one output element of the result matrix, subject to the boundary checks implemented in the kernel.
