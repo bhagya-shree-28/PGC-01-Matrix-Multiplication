@@ -681,7 +681,7 @@ Their roles are:
 
 ## 5.4 CUDA Implementation
 
-The CUDA implementation performs matrix multiplication on an NVIDIA GPU.
+The CUDA implementation performs matrix multiplication on an NVIDIA GPU. The CUDA program was compiled and executed in a MINGW64 (Git Bash) terminal on Windows.
 
 ### Step 1: Verify the NVIDIA GPU
 
@@ -699,7 +699,15 @@ nvcc --version
 
 Confirms that the NVIDIA CUDA compiler is installed and available.
 
-### Step 3: Compile the CUDA program
+### Step 3: Enter the CUDA directory
+
+```bash
+cd ~/parallel_lab/cuda
+```
+
+Moves into the working directory that contains `matrix_cuda.cu`.
+
+### Step 4: Compile the CUDA program
 
 ```bash
 nvcc -O2 matrix_cuda.cu -o matrix_cuda
@@ -708,14 +716,27 @@ nvcc -O2 matrix_cuda.cu -o matrix_cuda
 Compiles the CUDA source file using `nvcc`.
 
 - `-O2` enables compiler optimization.
+- `-o` specifies the name of the generated executable.
 
-### Step 4: Execute the CUDA program
+### Step 5: Execute the CUDA program
 
 ```bash
 ./matrix_cuda
 ```
 
 Executes the CUDA matrix multiplication program. The CPU transfers input data to GPU memory, launches the CUDA kernel, and copies the resulting matrix back to CPU memory.
+
+The program output was:
+
+```text
+CUDA Matrix Multiplication Completed
+Matrix Size = 4000 x 4000
+Grid Size = 250 x 250 blocks
+Block Size = 16 x 16 threads
+Kernel Execution Time = 0.154827 seconds
+Total CUDA Phase Time = 0.183416 seconds
+Verification C[0][0] = 4000.00
+```
 
 The CUDA configuration used in this experiment is:
 
@@ -751,13 +772,22 @@ Parallel Matrix Multiplication
 Host Memory
 ```
 
-The measured CUDA timing includes the relevant execution phases reported by the program. The CUDA kernel time and total CUDA phase time are also recorded separately for analysis.
+The CUDA kernel time and total CUDA phase time are recorded separately. The difference between them covers the other measured phases, such as memory transfer.
 
 ---
 
 # 6. Experimental Results
 
 The performance of all four implementations was measured using the same `4000 × 4000` matrix multiplication workload.
+
+<img width="960" height="600" alt="results" src="https://github.com/user-attachments/assets/0cb4c0eb-aff1-4df8-ade8-b5f3cef8d4af" />
+
+<img width="1600" height="900" alt="result" src="https://github.com/user-attachments/assets/99ea8412-c830-452c-94c9-3705057d62ac" />
+
+<img width="959" height="980" alt="10-result" src="https://github.com/user-attachments/assets/860c0fd3-91d7-4d90-9fe3-ae40af1b0949" />
+
+<img width="527" height="294" alt="results" src="https://github.com/user-attachments/assets/fa6966f7-c049-4c35-abac-7fc01ad7a5eb" />
+
 
 ## 6.1 Execution Time
 
@@ -766,16 +796,16 @@ The performance of all four implementations was measured using the same `4000 ×
 | Sequential | Single CPU execution | 606.987331 |
 | OpenMP | 8 CPU threads | 40.574496 |
 | MPI | 4 MPI processes | 223.691390 |
-| CUDA | GPU execution | 0.225428 |
+| CUDA | GPU execution | 0.183416 |
 
-For CUDA, the measured kernel execution time was:
+For CUDA, the measured times were:
 
 ```text
-CUDA Kernel Time: 0.188994 seconds
-CUDA Total Phase: 0.225428 seconds
+CUDA Kernel Time: 0.154827 seconds
+CUDA Total Phase: 0.183416 seconds
 ```
 
-The total CUDA phase includes the relevant GPU execution phases measured by the implementation.
+The total CUDA phase time (used for comparison) includes the kernel execution and the other measured GPU phases, such as data transfer.
 
 ## 6.2 Correctness Verification
 
@@ -792,11 +822,9 @@ because each output element performs 4000 multiplications of `1.0 × 1.0`.
 | Sequential | 4000.00 | 4000.00 | Verified |
 | OpenMP | 4000.00 | 4000.00 | Verified |
 | MPI | 4000.00 | 4000.00 | Verified |
-| CUDA | 4000.00 | 0.00 | Requires debugging |
+| CUDA | 4000.00 | 4000.00 | Verified |
 
-The Sequential, OpenMP, and MPI implementations produced the expected verification value.
-
-The CUDA implementation reported `0.00` for the checked output element. Therefore, the CUDA timing result is recorded for performance analysis, but its correctness has not been validated and the CUDA implementation requires further debugging before making a final end-to-end performance claim.
+All four implementations produced the expected verification value for `C[0][0]`.
 
 ## 6.3 Speedup
 
@@ -813,9 +841,9 @@ Using the measured execution times:
 | Sequential | 606.987331 | 1.00× |
 | OpenMP | 40.574496 | 14.96× |
 | MPI | 223.691390 | 2.71× |
-| CUDA | 0.225428 | 2692.60× |
+| CUDA (total phase) | 0.183416 | 3309.35× |
 
-The CUDA speedup shown above is an observed timing ratio only. Since the CUDA verification currently reports `0.00` instead of the expected `4000.00`, it should not be interpreted as a validated correct speedup until the CUDA implementation is corrected.
+For reference, the speedup based on the CUDA kernel time alone (0.154827 s) is 3920.42×.
 
 ## 6.4 Result Summary
 
@@ -833,13 +861,14 @@ MPI
     Speedup        : 2.71×
 
 CUDA
-    Kernel Time    : 0.188994 s
-    Total Phase    : 0.225428 s
-    Observed Ratio : 2692.60×
-    Verification   : Requires debugging
+    Kernel Time    : 0.154827 s
+    Total Phase    : 0.183416 s
+    Speedup        : 3309.35× (total phase)
+    Verification   : Verified (4000.00)
 ```
 
 These measurements are used in the following sections to compare the performance characteristics of sequential, shared-memory, distributed-memory, and GPU-based parallel execution.
+
 
 ---
 
@@ -866,9 +895,9 @@ Efficiency = Speedup / Number of Parallel Units
 | Sequential | 1 | 606.987331 | 1.00× | 100% |
 | OpenMP | 8 threads | 40.574496 | 14.96× | 187% |
 | MPI | 4 processes | 223.691390 | 2.71× | 68% |
-| CUDA | GPU threads | 0.225428 | 2692.60× | Not applicable |
+| CUDA | GPU threads | 0.183416 | 3309.35× | Not applicable |
 
-> **Note:** The CUDA speedup is an observed timing ratio only. The CUDA verification reported `0.00` instead of `4000.00`, so this value is not validated (see Section 6.2).
+> **Note:** The CUDA speedup uses the total CUDA phase time. Efficiency is not given for CUDA because the number of GPU threads is not comparable to CPU threads or processes. The CUDA run was executed in a native Windows environment (MINGW64), while the CPU runs were executed in WSL.
 
 ## 7.2 Execution Time Comparison
 
@@ -911,11 +940,12 @@ MPI reduced the execution time to **223.691390 seconds**, a speedup of **2.71×*
 
 ### 4. CUDA
 
-CUDA recorded a kernel time of **0.188994 seconds** and a total phase time of **0.225428 seconds**.
+CUDA recorded a kernel time of **0.154827 seconds** and a total phase time of **0.183416 seconds**, a speedup of **3309.35×** over the sequential baseline.
 
-- The GPU can run a very large number of threads at the same time (62,500 blocks of 256 threads).
-- The difference between the total phase and the kernel time (about 0.036 seconds) represents the other measured phases, such as memory transfer.
-- The CUDA verification reported `0.00` instead of `4000.00`, so the kernel output was not correct. Until this is fixed, the CUDA timing cannot be treated as a valid result, and a failed or incomplete kernel can finish much faster than a correct one.
+- The GPU runs a very large number of threads at the same time (62,500 blocks of 256 threads), with each thread computing one output element.
+- The matrix has `4000 × 4000 = 16,000,000` output elements, so the GPU has enough independent work to keep its cores busy.
+- The difference between the total phase and the kernel time (about 0.029 seconds) represents the other measured phases, such as memory transfer between host and device. This is about 16% of the total phase time.
+- The verification value `4000.00` matches the expected result.
 
 ### 5. Overall Observation
 
@@ -924,9 +954,9 @@ CUDA recorded a kernel time of **0.188994 seconds** and a total phase time of **
 | Sequential | Only one execution flow performs all computation |
 | OpenMP | Shared memory gives low overhead, but the number of CPU cores is limited |
 | MPI | Communication and synchronization between processes |
-| CUDA | Host-device memory transfer and kernel launch (not validated) |
+| CUDA | Large number of GPU threads, with host-device memory transfer as the main overhead |
 
-These observations are specific to this hardware, workload, and configuration and should not be generalized to all systems.
+The ranking by execution time is CUDA, then OpenMP, then MPI, then Sequential. These observations are specific to this hardware, workload, and configuration and should not be generalized to all systems.
 
 ---
 
@@ -939,10 +969,10 @@ The results showed:
 - Sequential execution took 606.987331 seconds and was used as the baseline.
 - OpenMP with 8 threads took 40.574496 seconds (14.96× speedup).
 - MPI with 4 processes took 223.691390 seconds (2.71× speedup).
-- CUDA recorded 0.225428 seconds, but its output failed verification, so the result is not yet validated.
-- The Sequential, OpenMP, and MPI implementations produced the expected value of `4000.00`.
+- CUDA took 0.183416 seconds for the total phase (3309.35× speedup), with a kernel time of 0.154827 seconds.
+- All four implementations produced the expected verification value of `4000.00`.
 
-Among the verified implementations, OpenMP gave the best performance. MPI gave a smaller speedup, which is consistent with the cost of communication between processes.
+CUDA gave the best performance because the GPU executes a very large number of threads in parallel. OpenMP was the best CPU-based approach because threads share memory and have low communication overhead. MPI gave a smaller speedup, which is consistent with the cost of communication between processes.
 
 The experiment also provides practical experience with:
 
@@ -950,10 +980,3 @@ The experiment also provides practical experience with:
 - Compiling and running OpenMP, MPI, and CUDA programs
 - Measuring execution time and calculating speedup
 - Verifying results and analyzing performance overheads
-
-## Future Work
-
-- Fix and re-verify the CUDA implementation, then re-measure its time.
-- Re-run the sequential baseline to check the OpenMP speedup.
-- Test with different thread counts and process counts.
-- Try an optimized version such as loop reordering, blocking, or CUDA shared-memory tiling.
