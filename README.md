@@ -901,13 +901,13 @@ Efficiency = Speedup / Number of Parallel Units
 
 ## 7.2 Execution Time Comparison
 
-<img width="600" alt="execution_time" src="results/execution_time.png" />
+<img width="500" height="293" alt="execution_time" src="https://github.com/user-attachments/assets/c34ddcd2-3b79-482a-96f1-b340f924c6a7" />
 
 This graph compares the execution time of all four implementations. A logarithmic scale is used because the CUDA time is much smaller than the sequential time.
 
 ## 7.3 Speedup Comparison
 
-<img width="600" alt="speedup" src="results/speedup.png" />
+<img width="498" height="295" alt="speedup" src="https://github.com/user-attachments/assets/0f4881e7-4f57-4009-bbac-b366a95c92d8" />
 
 This graph compares the speedup of OpenMP, MPI, and CUDA relative to the sequential baseline.
 
